@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Lab demo: launch one Amazon Linux 2023 EC2 with Nginx (SSH+HTTP open)."
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: MyDemoKey
+    Description: Existing EC2 KeyPair for SSH
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-0c7fb146d4f8ef317
+    Description: VPC to use (default VPC works fine)
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Default: subnet-005e3b90529c8921f
+    Description: Public subnet in that VPC
+
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+    Description: Automatically resolves to the latest Amazon Linux 2023 AMI
+
+Resources:
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow SSH (22) and HTTP (80)"
+      VpcId:
+        Ref: VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  # --- IAM for CloudWatch Agent config to SSM ---
+  CWAgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: PutCWAgentConfigToSSM
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowWriteCloudWatchAgentConfigToSSM
+                Effect: Allow
+                Action: ssm:PutParameter
+                Resource:
+                  Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/AmazonCloudWatch-*
+
+  CWAgentInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - Ref: CWAgentRole
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId:
+        Ref: LatestAmiId
+      KeyName:
+        Ref: KeyName
+      SubnetId:
+        Ref: SubnetId
+      SecurityGroupIds:
+        - Ref: EC2SecurityGroup
+      IamInstanceProfile:
+        Ref: CWAgentInstanceProfile
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -euxo pipefail
+            dnf -y update
+            dnf -y install nginx
+            systemctl enable --now nginx
+            echo "Hello from CloudFormation Lab!" > /usr/share/nginx/html/index.html
+
+Outputs:
+  InstanceId:
+    Description: EC2 instance ID
+    Value:
+      Ref: EC2Instance
+
+  PublicIP:
+    Description: Public IP of the instance
+    Value:
+      Fn::GetAtt:
+        - EC2Instance
+        - PublicIp
+
+  WebURL:
+    Description: Nginx welcome page URL
+    Value:
+      Fn::Sub: "http://${EC2Instance.PublicIp}"
