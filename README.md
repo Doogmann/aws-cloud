@@ -20,14 +20,11 @@ aws cloudformation deploy \
 aws cloudformation delete-stack --stack-name EC2DemoStack
 aws cloudformation wait stack-delete-complete --stack-name EC2DemoStack
 
-### then deploy again with corrected parameters
-aws cloudformation deploy \
+### then deploy again with updated parameters containing cloudwatch
   --stack-name EC2DemoStack \
   --template-file vm_cf_cloudwatch.yaml \
   --parameter-overrides KeyName=MyDemoKey \
   --capabilities CAPABILITY_NAMED_IAM
-
-
 
 
 ### List subnets 
