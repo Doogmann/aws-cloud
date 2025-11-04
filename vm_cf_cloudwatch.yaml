@@ -1,11 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Lab demo: launch one Amazon Linux 2023 EC2 with Nginx (SSH+HTTP open)."
+Description: "Lab demo: EC2 + Nginx + SSM (no PEM needed) + CW agent permissions."
 
 Parameters:
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
     Default: MyDemoKey
-    Description: Existing EC2 KeyPair for SSH
+    Description: Existing EC2 KeyPair for SSH (optional when using SSM)
 
   VpcId:
     Type: AWS::EC2::VPC::Id
@@ -39,8 +39,8 @@ Resources:
           ToPort: 80
           CidrIp: 0.0.0.0/0
 
-  # --- IAM for CloudWatch Agent config to SSM ---
-  CWAgentRole:
+  # === IAM for SSM + CloudWatch Agent + PutParameter ===
+  InstanceRole:
     Type: AWS::IAM::Role
     Properties:
       Path: /
@@ -52,6 +52,9 @@ Resources:
               Service: ec2.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
+        # SSM Session Manager (lets you connect without a PEM)
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        # CloudWatch agent common permissions
         - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
       Policies:
         - PolicyName: PutCWAgentConfigToSSM
@@ -64,12 +67,12 @@ Resources:
                 Resource:
                   Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/AmazonCloudWatch-*
 
-  CWAgentInstanceProfile:
+  InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Path: /
       Roles:
-        - Ref: CWAgentRole
+        - Ref: InstanceRole
 
   EC2Instance:
     Type: AWS::EC2::Instance
@@ -84,16 +87,24 @@ Resources:
       SecurityGroupIds:
         - Ref: EC2SecurityGroup
       IamInstanceProfile:
-        Ref: CWAgentInstanceProfile
+        Ref: InstanceProfile
+      # If your subnet doesn't auto-assign a public IP, uncomment below to force one:
+      # NetworkInterfaces:
+      #   - DeviceIndex: 0
+      #     SubnetId: !Ref SubnetId
+      #     GroupSet: [ !Ref EC2SecurityGroup ]
+      #     AssociatePublicIpAddress: true
       UserData:
         Fn::Base64:
           Fn::Sub: |
             #!/bin/bash
             set -euxo pipefail
             dnf -y update
-            dnf -y install nginx
+            dnf -y install nginx amazon-cloudwatch-agent
             systemctl enable --now nginx
             echo "Hello from CloudFormation Lab!" > /usr/share/nginx/html/index.html
+            # (optional) basic CW agent ping; config can be stored to SSM with your new permission
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status || true
 
 Outputs:
   InstanceId:
@@ -104,9 +115,7 @@ Outputs:
   PublicIP:
     Description: Public IP of the instance
     Value:
-      Fn::GetAtt:
-        - EC2Instance
-        - PublicIp
+      Fn::GetAtt: [ EC2Instance, PublicIp ]
 
   WebURL:
     Description: Nginx welcome page URL
