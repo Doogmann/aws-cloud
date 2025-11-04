@@ -4,9 +4,6 @@
 ### Update Stack 
 ws cloudformation update-stack  --template-body file://vm_cf_cloudwatch.yaml --stack-name EC2DemoStack
 
-### Delete Stack 
-aws cloudformation delete-stack --stack-name EC2DemoStack
-
 ### Deploy Stack
 
 aws cloudformation deploy \
@@ -19,11 +16,10 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_NAMED_IAM
 
 
-
 ### Delete Stack / CLEAN UP 
 aws cloudformation delete-stack --stack-name EC2DemoStack
 aws cloudformation wait stack-delete-complete --stack-name EC2DemoStack
-# then deploy again with corrected parameters
+#### then deploy again with corrected parameters
 
 
 
