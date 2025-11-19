@@ -121,3 +121,4 @@ Outputs:
     Description: Nginx welcome page URL
     Value:
       Fn::Sub: "http://${EC2Instance.PublicIp}"
+
